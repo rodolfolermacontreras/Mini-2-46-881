@@ -1,6 +1,7 @@
 ---
-title: "R Notebook"
+title: "Homework 1"
 output: html_notebook
+student: Rodolfo Lerma
 ---
 
 This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
@@ -8,7 +9,8 @@ This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute
 Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
 
 ```{r}
-plot(cars)
+#plot(cars)
+#install.packages("dplyr")
 ```
 
 Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
@@ -20,6 +22,7 @@ The preview shows you a rendered HTML copy of the contents of the editor. Conseq
 ```{r, message = FALSE}
 library(skimr)
 library(tidyverse)
+#detach(package:plyr)
 ```
 
 ```{r, message = FALSE}
@@ -28,4 +31,163 @@ df <- read_csv("tropical_cyclones.csv")
 
 ```{r}
 head(df)
+```
+```{r}
+glimpse(df)
+```
+
+1. Which month of the year has the highest number of tropical cyclones making landfall?
+
+```{r}
+#library(plyr)
+#count_per_month = count(df, 'month')
+#count_per_month
+```
+```{r}
+df %>% count(month)
+```
+
+We can see that the month with the highest tropical cyclones making landfall is the number 9 (SEPTEMBER) with 83 times over the 40 years period represented here.
+
+
+2. Compare the tropical cyclone activity across the North Atlantic and the Eastern Pacific basins:
+i. Which of the two basins has, on average, the more severe tropical cyclones as measured by the maximum sustained wind speed at landfall?
+
+```{r}
+df_grouped <-  group_by(df, basin)
+summary_avg_speed <- summarize(df_grouped, avg_wing_speed = mean(wind_speed_landfall))
+summary_avg_speed
+```
+
+```{r}
+summary_sd_speed <- summarize(df_grouped, sd_wing_speed = sd(wind_speed_landfall))
+summary_sd_speed
+```
+
+It seems that the North Atlantic in AVG gets slightly stronger winds, with a similar STD DEV in both cases.
+
+ii. Which of the two basins has the higher proportion of hurricanes among all tropical cyclones originating in that basin (a hurricane is indicated by 1 in the hurricane_landfall column)?
+
+```{r}
+summary_avg_basin_hurr <- summarize(df_grouped, sum_hurricanes = sum(hurricane_landfall))
+summary_avg_basin_hurr
+```
+
+We can see based on the data above that the North Atlantic has higher proportion of Tropical Cyclones that end up in Hurricanes (65 compared to 31 from the Eastern Pacific)
+
+3. Assume that the maximum sustained wind speed at landfall of a tropical cyclone follows a normal distribution:
+i. Estimate and report the mean and standard deviation of that distribution across all tropical cyclones in the dataset.
+
+```{r}
+avg <- mean(df$wind_speed_landfall)
+std_dev <- sd(df$wind_speed_landfall)
+
+cat('avg:', avg, 'std_dev:', std_dev)
+```
+We can see that the mean and std deviation is 56.52 knots with a variation of 25.06 knots.
+
+```{r}
+hist(df$wind_speed_landfall)
+```
+
+ii. Using the mean and standard deviation you computed in (i), calculate the probability that the maximum sustained wind speed at landfall is less than or equal to 34 knots (that is, the cyclone is a tropical depression)? How does this compare with the actual proportion of tropical depressions in the dataset?
+
+```{r}
+#Base on a Normal distribution assumption
+proba_34_distribution = pnorm(34, mean = avg, sd = std_dev, lower.tail = TRUE)
+proba_34_distribution
+```
+Based on the mean and std and under the assumption of normal distribution the probability of the wind speed being less of equal to 34 knots is 19%
+
+```{r}
+smaller_df = df[df$wind_speed_landfall <= 34.0,]
+proba_34_data = nrow(smaller_df)/nrow(df)
+proba_34_data
+```
+Based on the data the probability that the wind speed at landfall is less or equal to 34 is 20%
+
+4. Your dataset contains a damage column that represents the total damage (in $billions) caused by a tropical cyclone when it made landfall. We provide below an R command and output that calculates the average of that column by basin.
+One interpretation of this output is that cyclones from the North Atlantic basin are approximately ten times stronger than cyclones from the Eastern Pacific basin. What are some other reasons that possibly explain the difference in average damage observed in this output?
+
+```{r}
+avg_cost = summarize(group_by(df, basin), avg_damage = mean(damage, na.rm = TRUE), sd_damage = sd(damage, na.rm = TRUE), avg_speed = mean(wind_speed_landfall))
+avg_cost
+```
+```{r}
+pacific_df = df[df$basin == 'Eastern Pacific',]
+hist(pacific_df$damage,breaks = seq(0,6,0.1))
+```
+
+```{r}
+atlantic_df = df[df$basin == 'North Atlantic',]
+hist(atlantic_df$damage, breaks = seq(0,150,2))
+```
+
+
+```{r}
+null = summarize(group_by(df, basin), missing_val = sum(is.na(damage)), number_rows = n(), ratio_missing_rows = sum(is.na(damage)/n()))
+null
+```
+```{r}
+plot(df$wind_speed_landfall, df$damage,
+     pch = 19,
+     col = factor(df$basin))
+
+# Legend
+legend("topleft",
+       legend = levels(factor(df$basin)),
+       pch = 19,
+       col = factor(levels(factor(df$basin))))
+
+# plot a regression line
+#abline(lm(df$damage ~ df$wind_speed_landfall ,data=atlantic_df),col='red')
+#abline(lm(df$damage ~ df$wind_speed_landfall,data=pacific_df),col='black')
+```
+```{r message = FALSE}
+#install.packages("car")
+library(car)
+scatterplot(df$damage ~ df$wind_speed_landfall | df$basin, data = df, 
+            smoother = FALSE, grid = FALSE, frame = FALSE)
+```
+
+
+5. To understand the potential impact of climate change on tropical cyclone activity it may be useful to look at the evolution of a few metrics over the past 40 years. Answer the following questions based only on the data we have provided.
+i. Has the annual number of tropical cyclones making landfall been changing over the past 40 years? There are 3 possibilities: the annual number is increasing, there is no significant change, or it is decreasing. Identify which possibility is best supported by the data and explain why.
+
+```{r}
+df_grouped_year <-  group_by(df, year)
+events <- summarize(df_grouped_year, number = n())
+events
+```
+
+
+```{r}
+plot(events$year, events$number,
+     pch = 19)
+
+# Legend
+
+# plot a regression line
+abline(lm(events$number ~ events$year ,data=events),col='red')
+#abline(lm(df$damage ~ df$wind_speed_landfall,data=pacific_df),col='black')
+```
+ii. Has the average maximum sustained wind speed at landfall (that is, annual average of wind_speed_landfall) of tropical cyclones been changing over the past 40 years? There are 3 possibilities: the average maximum sustained wind speed at landfall is increasing, there is no significant change, or it is decreasing. Identify which of possibility is best supported by the data and explain why.
+
+
+```{r}
+df_grouped_year <-  group_by(df, year)
+avg_speed <- summarize(df_grouped_year, avg = mean(wind_speed_landfall))
+avg_speed
+```
+
+```{r}
+plot(avg_speed$year, avg_speed$avg,
+     pch = 19)
+
+# Legend
+
+# plot a regression line
+abline(lm(avg_speed$avg ~ avg_speed$year ,data=avg_speed),col='red')
+#abline(lm(df$damage ~ df$wind_speed_landfall,data=pacific_df),col='black')
+```
 ```
