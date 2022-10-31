@@ -1,0 +1,285 @@
+---
+title: "Creating the Bikeshare Dataset"
+---
+
+## Loading Packages
+
+```{r, message=FALSE}
+library(tidyverse)
+library(skimr)
+library(lubridate) 
+```
+
+## PART 1: Preparing Hourly Rentals Data
+
+### Importing Rentals Data
+
+System data is publicly available at <https://healthyridepgh.com/data/>
+
+We are considering 2021 data. Data consists of 4 separate quarterly datasets. 
+
+**Make sure you set the working directory to the location of these four data files**.
+
+```{r, message=FALSE}
+rentals_Q1 = read_csv("Healthy_Ride_Rentals_2021_Q1.csv")
+rentals_Q2 = read_csv("Healthy_Ride_Rentals_2021_Q2.csv")
+rentals_Q3 = read_csv("Healthy_Ride_Rentals_2021_Q3.csv")
+rentals_Q4 = read_csv("Healthy_Ride_Rentals_2021_Q4.csv")
+```
+
+We row-bind the quarterly dataframes into one main dataframe:
+
+```{r}
+rentals_all = bind_rows(rentals_Q1, rentals_Q2, rentals_Q3, rentals_Q4)
+```
+
+And remove the quarterly dataframe from the working environment to save memory...
+
+```{r}
+rm(rentals_Q1); rm(rentals_Q2); rm(rentals_Q3); rm(rentals_Q4) 
+```
+
+```{r}
+glimpse(rentals_all)
+```
+
+We have 123,600 observations and 10 variables
+
+### Aggregating rentals into hourly buckets
+
+We need only the Starttime column for the rentals_all dataframe.
+
+```{r}
+df_rentals <- select(rentals_all, Starttime)
+```
+
+Note from the output of the glimpse command above that the Starttime column was of type <chr> - R did not recognize it as a datetime object. So we parse it using one of lubridate's functions:
+
+(Note, the original data is in Eastern Standard Time (EST). In R, EST is denoted "Etc/GMT+5")
+
+```{r}
+df_rentals$Starttime <- mdy_hm(rentals_all$Starttime, tz = "Etc/GMT+5")
+```
+
+Pittsburgh local time, however, is Eastern Time (in R, "US/Eastern") which differs from EST in the daylight saving adjustment. We can can convert to Eastern Time using another lubridate function:
+
+```{r}
+df_rentals$Starttime <- with_tz(df_rentals$Starttime, tzone="US/Eastern")
+```
+
+We can now proceed with creating month, day, hour, and day_of_week columns using the datetime component extraction functions of lubridate:
+
+```{r}
+df_rentals <- mutate(df_rentals, 
+                     month = month(Starttime, label = TRUE),
+                     day = day(Starttime), 
+                     hour = hour(Starttime))
+```
+
+Next, we aggregate the rentals in each hour:
+
+```{r}
+df_rentals_hourly <- df_rentals %>%
+                         group_by(month, day, hour) %>%
+                         summarize(rentals = n()) %>%
+                         ungroup()
+```
+
+Note that we have 7932 records. That's only 90% of the hours in a year. Why? Because some hours had zero rides. We should include these hours; otherwise, our analysis would be skewed.
+
+Listing all hours of the year: 
+
+```{r}
+time_stamps <- as_tibble(seq(ISOdatetime(2021,1,1,0,0,0, "US/Eastern"), 
+                            ISOdatetime(2021,12,31,23,0,0, "US/Eastern"), "hours"))
+
+colnames(time_stamps) <- c('time_stamp')
+```
+
+Notice something interesting: The time stamp sequence has skipped 2:00 a.m. on March 14th and added two 1:00 a.m. rows on November 7th. That's exactly what we expect!
+
+The November 7th 1:00 a.m. hours (rows 7441 and 7442), however, are coded differently:
+```{r}
+print(time_stamps$time_stamp[7441])
+print(time_stamps$time_stamp[7442])
+```
+
+For our analysis, however, we will combine both 1:00 a.m. hours on November 7th into a single hour by removing the EST version
+
+```{r}
+time_stamps <- slice(time_stamps, -7442)
+```
+
+Now let's extract the month, day, hour, and day_of_week of the time_stamps:
+
+```{r}
+time_stamps <- mutate(time_stamps, 
+                      month = month(time_stamp, label = TRUE),
+                      day = day(time_stamp),
+                      hour = hour(time_stamp),
+                      day_of_week = wday(time_stamp, label = TRUE))
+```
+
+We'll use left_join to fill out the hours where we had rentals:
+
+```{r}
+df_rentals_hourly <- left_join(time_stamps, df_rentals_hourly)
+```
+
+And replace the NA values (hours without rentals) with the  value 0:
+
+```{r}
+df_rentals_hourly <- replace_na(df_rentals_hourly, list(rentals = 0))
+```
+
+We don't need the time stamp column anymore:
+
+```{r}
+df_rentals_hourly <- select(df_rentals_hourly, -time_stamp)
+```
+
+We are done with aggregating rentals!
+
+## PART 2: Importing and Preparing Pittsburgh Weather Data
+
+### Importing Weather Data
+
+Source: NOAA local climate data 
+<https://www.ncdc.noaa.gov/cdo-web/datatools/findstation>
+Station 72520514762 (Pittsburgh's Allegheny Co Airport) Lat=40.3551, Lon=-79.92145
+Date range: 1 Jan 2021 to 31 Dec 2021
+Documentation: LCD_documentation.pdf posted on Canvas
+
+*Set working directory to location of weather file **noaa_agc.csv**.
+
+```{r}
+df_weather <- read_csv("noaa_agc.csv")
+```
+
+The dataset has 13,190 observations of 125 variables.
+
+We will select only a few relevant weather columns:
+
+```{r}
+df_weather <- select(df_weather, 
+                     DATE,
+                     REPORT_TYPE,
+                     HourlyDryBulbTemperature,
+                     HourlyRelativeHumidity,
+                     HourlyWindSpeed,
+                     HourlyPrecipitation)
+```
+
+
+### Filtering to get hourly data
+
+Notice the number of observations exceed the number of hours 8760. This is due to more than one observation per hour and monthly summaries.
+
+We can get hourly observations by restricting attending to the "FM-15" REPORT_TYPE. In that report hourly observations are taken 48-53 minutes past each hour
+
+```{r}
+df_weather_hourly <- filter(df_weather, REPORT_TYPE == "FM-15")
+```
+
+8,760 observations of 6 variables. We can drop REPORT_TYPE now
+
+```{r}
+df_weather_hourly <- select(df_weather_hourly, -REPORT_TYPE)
+```
+
+### Timezone and Daylght Savings Adjustment
+
+Date is already coded as date_time. However, LCD documentation (page 4) states: 
+"No adjustments are made to account for Daylight Savings Time (DST)"
+
+Let's fix that to be consistent with the rentals dataset:
+
+```{r}
+df_weather_hourly$date_time <- force_tz(df_weather_hourly$DATE, tzone="Etc/GMT+5")
+df_weather_hourly$date_time <- with_tz(df_weather_hourly$date_time, tzone="US/Eastern")
+```
+
+OK, we can drop DATE, keep date_time, and re-arranging the columns:
+
+```{r}
+df_weather_hourly <- select(df_weather_hourly, -DATE)
+df_weather_hourly <- relocate(df_weather_hourly, date_time)
+```
+
+Daylight Savings Time ended November 7th at 2:00 a.m. (hour falls back) which means we get two 1:00 a.m. - 2:00 a.m. observations. We'll remove the (EST) version (row 7442)
+
+```{r}
+df_weather_hourly <- slice(df_weather_hourly, -7442)
+```
+
+8759 observations and 5 variables
+
+### Column operations
+
+Now we can proceed with creating month, day, and hour columns (or variables)
+
+```{r}
+df_weather_hourly <- mutate(df_weather_hourly, 
+                            month = month(date_time, label = TRUE),
+                            day = day(date_time), 
+                            hour = hour(date_time))
+```
+
+And drop the date_time column..
+
+```{r}
+df_weather_hourly <- select(df_weather_hourly, -date_time)
+```
+
+Let's rename the weather columns for brevity:
+
+```{r}
+df_weather_hourly <- rename(df_weather_hourly, 
+                            temperature = HourlyDryBulbTemperature,
+                            humidity = HourlyRelativeHumidity,
+                            windspeed = HourlyWindSpeed,
+                            precipitation = HourlyPrecipitation)
+```
+
+### Fixing the Precipitation column
+
+Precipitation is coded <chr> because i) trace amounts are denoted T; and ii) some values have a trailing "s"; see for example row 979 
+
+We need to set "T" values to "0.00" and "s" characters to ""
+Use str_replace
+
+```{r}
+df_weather_hourly$precipitation <- str_replace(df_weather_hourly$precipitation, "T", "0.00")
+df_weather_hourly$precipitation <- str_replace(df_weather_hourly$precipitation, "s", "")
+```
+
+Now we convert the column to numeric type using parse_double
+
+```{r}
+df_weather_hourly$precipitation <- parse_double(df_weather_hourly$precipitation)
+glimpse(df_weather_hourly)
+```
+
+### PART 3: Combining Rentals and Weather Data
+
+```{r}
+df <- inner_join(df_rentals_hourly, df_weather_hourly)
+glimpse(df)
+```
+
+Move the dependent variable "rentals" to be the first column (this is a customary convention for the "dependent variable")
+
+```{r}
+df <- relocate(df, rentals)
+```
+
+Save the file:
+
+```{r}
+write_csv(df, "PIT_rideshare_dataset.csv")
+```
+
+DONE!
+
+
+
