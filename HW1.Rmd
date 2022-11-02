@@ -12,9 +12,9 @@ A tropical cyclone is a storm characterized by strong winds and heavy rain. Trop
 
 A tropical cyclone is classified into one of 7 categories based on its wind speed (see table below):
 
-• A category 0 tropical cyclone is also called a tropical depression 
-• A category 1 tropical cyclone is also called a tropical storm 
-• A tropical cyclone in categories 2-6 is called a hurricane
+- A category 0 tropical cyclone is also called a tropical depression 
+- A category 1 tropical cyclone is also called a tropical storm 
+- A tropical cyclone in categories 2-6 is called a hurricane
 
 ```{r, message = FALSE}
 library(skimr)
@@ -47,13 +47,8 @@ i.  Which of the two basins has, on average, the more severe tropical cyclones a
 
 ```{r}
 df_grouped <-  group_by(df, basin)
-summary_avg_speed <- summarize(df_grouped, avg_wing_speed = mean(wind_speed_landfall))
+summary_avg_speed <- summarize(df_grouped, avg_wing_speed = mean(wind_speed_landfall), sd_wing_speed = sd(wind_speed_landfall))
 summary_avg_speed
-```
-
-```{r}
-summary_sd_speed <- summarize(df_grouped, sd_wing_speed = sd(wind_speed_landfall))
-summary_sd_speed
 ```
 It seems that the North Atlantic in AVG gets slightly stronger winds, with a similar STD DEV in both cases.
 
@@ -63,19 +58,18 @@ ii. Which of the two basins has the higher proportion of hurricanes among all tr
 summary_avg_basin_hurr <- summarize(df_grouped, sum_hurricanes = sum(hurricane_landfall))
 summary_avg_basin_hurr
 ```
-
 We can see based on the data above that the North Atlantic has higher proportion of Tropical Cyclones that end up in Hurricanes (65 compared to 31 from the Eastern Pacific)
 
 3.  Assume that the maximum sustained wind speed at landfall of a tropical cyclone follows a normal distribution:
 
-i.  Estimate and report the mean and standard deviation of that distribution across all tropical cyclones in the dataset.
+i.  Estimate and report the mean and standard deviation of that distribution across all tropical cyclones in the data set.
 
 ```{r}
 avg <- mean(df$wind_speed_landfall)
 std_dev <- sd(df$wind_speed_landfall)
 cat('avg:', avg, 'std_dev:', std_dev)
 ```
-We can see that the mean and std deviation is 56.52 knots with a variation of 25.66 knots.
+We can see that the mean and std deviation is 56.52 knots with a variation (standard deviation) of 25.66 knots.
 
 ```{r}
 hist(df$wind_speed_landfall)
@@ -85,14 +79,14 @@ ii. Using the mean and standard deviation you computed in (i), calculate the pro
 
 ```{r}
 #Base on a Normal distribution assumption
-proba_34_distribution = pnorm(34, mean = avg, sd = std_dev, lower.tail = TRUE)
+proba_34_distribution = 100*pnorm(34, mean = avg, sd = std_dev, lower.tail = TRUE)
 proba_34_distribution
 ```
 Based on the mean and std and under the assumption of normal distribution the probability of the wind speed being less of equal to 34 knots is 19%.
 
 ```{r}
 smaller_df = df[df$wind_speed_landfall <= 34.0,]
-proba_34_data = nrow(smaller_df)/nrow(df)
+proba_34_data = 100*nrow(smaller_df)/nrow(df)
 proba_34_data
 ```
 Based on the data the probability that the wind speed at landfall is less or equal to 34 is 20%. Then the difference is 1% between the calculated probability and the one given by the data.
@@ -108,6 +102,7 @@ avg_cost
 pacific_df = df[df$basin == 'Eastern Pacific',]
 hist(pacific_df$damage,breaks = seq(0,6,0.1))
 ```
+Based on the plot above we can notice that we only have 2 data points for Eastern Pacific. While for the North Atlantic we have around 40 data points available.
 
 ```{r}
 atlantic_df = df[df$basin == 'North Atlantic',]
@@ -129,7 +124,7 @@ legend("topleft",
        pch = 19,
        col = factor(levels(factor(df$basin))))
 ```
-Looking at the data is possible to notice that the 2 points for the Pacific Tropical Cyclone are in the same cloud of points as the other data points for the Atlantic Tropical Cyclone given the same wind speed at landfall.
+Looking at the data is possible to notice that the 2 points for the Pacific Tropical Cyclone are in the same cloud of points as the other data points for the Atlantic Tropical Cyclone given the same wind speed at landfall. Therefore the main situation/issue with the column "damage" is the lack of data, specially for Eastern Pacific Cyclones. 
 
 ```{r message = FALSE}
 #install.packages("car")
@@ -149,10 +144,16 @@ events
 ```
 
 ```{r}
+model1 = lm(events$number ~ events$year, data=events)
 plot(events$year, events$number, pch = 19)
-abline(lm(events$number ~ events$year, data=events),col='red')
+legend("topleft",legend = paste("R2 is", format(summary(model1)$r.squared,digits=3)))
+abline(model1,col='red') 
 ```
-We can see that the number of report events has increased over the years. The data might be telling us that there is an increase of the number of events over the years.
+```{r}
+summary(model1)
+```
+
+We can see that the number of report events has increased slightly over the years. The data might be telling us that there is an small increase of the number of events over the years.
 
 ii. Has the average maximum sustained wind speed at landfall (that is, annual average of wind_speed_landfall) of tropical cyclones been changing over the past 40 years? There are 3 possibilities: the average maximum sustained wind speed at landfall is increasing, there is no significant change, or it is decreasing. Identify which of possibility is best supported by the data and explain why.
 
@@ -168,10 +169,12 @@ plot(avg_speed$year, avg_speed$avg, pch = 19)
 legend("topleft",legend = paste("R2 is", format(summary(model)$r.squared,digits=3)))
 abline(model,col='green') 
 ```
+Based on the AVG Speed aggregated per year it is not possible to see a clear increase or decrease, specially as the R2 value is so low that it is safe to assume that the data is not correlated to the years. Therefore it seems that the speed of the events has changed with the years.
+
 ```{r}
 model2 = lm(df$wind_speed_landfall ~ df$year, data=df)
 plot(df$year, df$wind_speed_landfall, pch = 19)
 legend("topleft",legend = paste("R2 is", format(summary(model2)$r.squared,digits=3)))
 abline(model2,col='blue') 
 ```
-After looking at the wind speed at landfill and the lack of correlation with the number of years, we can conclude than even though the number of events have increased by year, the strength of these tropical cyclones has not increased significally.
+After looking at the wind speed at landfill and the lack of correlation with the number of years, we can conclude than even though the number of events have increased by year, the strength of these tropical cyclones has not increased significantly.
